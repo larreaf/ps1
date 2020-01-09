@@ -19,7 +19,7 @@ function FUNC_splitFile{
         [String]
         $Path,
         [Parameter(Mandatory=$true)]
-        [ValidatePattern('^[+]?[1-9]')]
+        [ValidatePattern('^[+]?[1-9]')] #Numeros naturales
         [Int]
         $LinesPerFile
     )
