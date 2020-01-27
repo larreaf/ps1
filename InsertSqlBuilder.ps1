@@ -183,6 +183,8 @@ function Build-Inserts {
     )
     
     Begin {
+        $StartDate = (GET-DATE)
+
         $ib = [InsertSQLBuilder]::new()
 
         $ib.serverAddress = '[172.16.1.92]'
@@ -234,13 +236,21 @@ function Build-Inserts {
             ++$lineCounter
             $progress = [math]::Round(($lineCounter * 100) / $totalRows, 2)
             if ($lineCounter % $interval -eq 0) {
+                $writer.Flush()
                 Write-Progress -Activity 'Generando archivo... ' -Status "$progress% Complete" -PercentComplete $progress
             }
             $ib.Clear()
         }
+        $EndDate = (GET-DATE)
+        $timeSpan = NEW-TIMESPAN -Start $StartDate -End $EndDate
+        Write-Verbose "Elapsed time: $timeSpan"
+        $writer.Write("/**** Elapsed time: $timeSpan ****/")
+        $writer.Flush()
     }
     
     End{
+        $writer.Close()
+        $writer.Dispose()
         $outputFileStream.Close()
         $outputFileStream.Dispose()
         Write-Verbose "Lineas exportadas: $lineCounter" 
@@ -248,10 +258,7 @@ function Build-Inserts {
 }
 
 
-$source = ' '
-$outputFile = ' '
+$source = ''
+$outputFile = ''
 
 Build-Inserts -Source $source -OutputFile $outputFile -Separator ',' -Verbose
-
-
-
