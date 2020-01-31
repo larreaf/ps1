@@ -9,7 +9,6 @@ class InsertSQLBuilder {
     [String] $schema
     [String] $table
 
-    # Constructor: Creates a new InsertSQLBuilder object
     InsertSQLBuilder() {
         #Builder itself
         $this.stringBuilderColumnNames = [System.Text.StringBuilder]::new()
@@ -24,7 +23,7 @@ class InsertSQLBuilder {
         $this.table = ''
     }
 
-    #Replace Whitespaces in columnName with a '_'
+    
     [void] addColumn([String] $columnName) {
         $this.stringBuilderColumnNames.Append($this.columnSeparator)
         $columnName = Remove-WhiteSpace $columnName
@@ -51,10 +50,16 @@ class InsertSQLBuilder {
         return $insert
     }
     #Clear the columnNames and values
-    [void]Clear(){
+    [void]ClearAll(){
+        $this.ClearColumns()
+        $this.ClearValues()
+    }
+    [void]ClearColumns(){
         [void]$this.stringBuilderColumnNames.Clear()
-        [void]$this.stringBuilderValues.Clear()
         $this.columnSeparator = ''
+    }
+    [void]ClearValues(){
+        [void]$this.stringBuilderValues.Clear()
         $this.valueSeparator = ''
     }
 
@@ -107,6 +112,7 @@ class TableSQLBuilder{
             $this.addColumn($_)
         }
     }
+
     [String]ToString(){
         $stringBuilder = [System.Text.StringBuilder]::new()
         [void]$stringBuilder.Append('CREATE TABLE ').Append($this.fourPartName()).Append(' (')
@@ -140,22 +146,6 @@ function Build-Table{
         [PSCustomObject]
         $columnNames
     )
-    
-    <#
-    $stringBuilderTable = [System.Text.StringBuilder]::new()
-    $separator = ''
-    [void]$stringBuilderTable.Append('CREATE TABLE ').Append($tableName).Append(' (')
-    $columnNames.psobject.properties | ForEach-Object {
-        
-        [void]$stringBuilderTable.Append($separator)
-        $column = Remove-WhiteSpace $_.Name
-        [void]$stringBuilderTable.Append($column)
-        [void]$stringBuilderTable.Append(' VARCHAR(255)')
-        $separator = ','
-    }
-    [void]$stringBuilderTable.Append(') ')
-
-    return $stringBuilderTable.ToString()#>
 
     $tableBuilder = [TableSQLBuilder]::new()
     $tableBuilder.table = $tableName
@@ -187,9 +177,9 @@ function Build-Inserts {
 
         $ib = [InsertSQLBuilder]::new()
 
-        $ib.serverAddress = '[172.16.1.92]'
-        $ib.database = 'ENGAGENBSF'
-        #$ib.schema = 'ENGAGENBSF'
+        #$ib.serverAddress = ''
+        $ib.database = 'DataBase'
+        #$ib.schema = 'Schema'
         $ib.table = '##tempTableRPT' 
 
         $path = $source
@@ -206,12 +196,12 @@ function Build-Inserts {
         }
 
         $totalRows = 0
-        Get-Content -Path $source -ReadCount 100 | % { $totalRows += $_.Count }
+        Get-Content -Path $source -ReadCount 100 | ForEach-Object { $totalRows += $_.Count }
         [int]$interval = $totalRows * 0.01
 
 
         Write-Progress -Activity 'Generando archivo... ' -Status "0% Complete" -PercentComplete 0
-        Write-Debug 'Begin complete...'
+        
     }
 
     Process{
@@ -223,32 +213,40 @@ function Build-Inserts {
 
         $writer.WriteLine((Build-Table $ib.fourPartName() $csvData[0]))
         $csvData | Foreach-Object { 
-            #read csv
+            # Recorre el csv línea por línea
             foreach ($property in $_.PSObject.Properties) {
-                $ib.addColumn($property.Name)
+                # Guarda las columnas una sola vez en $ib
+                if($lineCounter -eq 0){
+                    $ib.addColumn($property.Name)
+                }                
                 $ib.addValue($property.Value)
             } 
-            $insert = $ib.ToString()
-    
-            #Write-Debug $insert
+            $insert = $ib.ToString()            
             $writer.WriteLine($insert)
-            #Add-Content -Path $outputFile -Value $insert
+            
+            #Cada un cierto porcentaje $interval de líneas escritas, se actualiza la barra de progreso y se hace un flush al archivo de salida 
             ++$lineCounter
             $progress = [math]::Round(($lineCounter * 100) / $totalRows, 2)
             if ($lineCounter % $interval -eq 0) {
                 $writer.Flush()
-                Write-Progress -Activity 'Generando archivo... ' -Status "$progress% Complete" -PercentComplete $progress
+                $EndDate = (GET-DATE)
+                $timeSpan = NEW-TIMESPAN -Start $StartDate -End $EndDate
+                Write-Progress -Activity 'Generando archivo... ' -Status "$progress% Completado: $timeSpan" -PercentComplete $progress
+                #[System.GC]::Collect()
             }
-            $ib.Clear()
+
+            # Limpia los valores
+            $ib.ClearValues()
         }
         $EndDate = (GET-DATE)
         $timeSpan = NEW-TIMESPAN -Start $StartDate -End $EndDate
         Write-Verbose "Elapsed time: $timeSpan"
-        $writer.Write("/**** Elapsed time: $timeSpan ****/")
+        $writer.WriteLine("/**** Elapsed time: $timeSpan ****/")
         $writer.Flush()
     }
     
     End{
+        $ib.ClearAll()
         $writer.Close()
         $writer.Dispose()
         $outputFileStream.Close()
@@ -257,8 +255,9 @@ function Build-Inserts {
     }
 }
 
-
+#archivo .csv de entrada
 $source = ''
-$outputFile = ''
+#archivo .sql de salida
+$outputFile = '' 
 
-Build-Inserts -Source $source -OutputFile $outputFile -Separator ',' -Verbose
+Build-Inserts -Source $source -OutputFile $outputFile -Separator ';' -Verbose
